@@ -1,10 +1,10 @@
 ---
--- package/_preload.lua
+-- github-package/_preload.lua
 -- Premake package management extension
--- Copyright (c) 2014-2015 Blizzard Entertainment
+-- Copyright (c) 2015 Matthew Versluys
 ---
 
-include('package.lua')
+include('github-package.lua')
 
 --return function(cfg)
 --	return true

@@ -1,8 +1,9 @@
 ---
--- package/_manifest.lua
+-- github-package/_manifest.lua
 -- Premake package management extension
--- Copyright (c) 2014-2015 Blizzard Entertainment
+-- Copyright (c) 2015 Matthew Versluys
 ---
+
 return {
-	'package.lua',
+	'github-package.lua',
 }

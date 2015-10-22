@@ -8,36 +8,31 @@ This extension makes it easy to share and consume C/C++ projects!
 
 Import this module by placing it somewhere in the premake search path and then use require to import it.
 
-    require 'package'
+    require 'github-package'
 
 ## Using packages
 
-To include a dependent project, import it your premake5.lua file using the package_import keyword.
+To include a dependent project, import it your premake5.lua file using the package_import function.
 
-    package_import {
-        'madler/zlib' = 'v1.2.8'
-    }
+    package_import('madler/zlib', 'v1.2.8')
 
 This imports the repository named zlib from the organization madler and uses the release named v1.2.8.
 
 To add the include path of the package in your project
 
-    package_includedirs { 'madler/zlib' }
+    package_includedirs 'madler/zlib'
 
 To link the library created by the project
 
-    package_links { 'madler/zlib' }
+    package_links 'madler/zlib'
 
 As a convenience you can get the includedirs and links from the package in one command.
 
-    package_use { 'madler/zlib' }
-
+    package_use 'madler/zlib'
 
 ## Creating packages
 
-If it's a repository on GitHub, it could already be a package.
-
-A package can contain a premake5-package.lua file that should return a snippet of lua that will be executed to create a project when needed.
+A package is a repository that contains a premake5-package.lua file at it's root. The file wil be executed when the package is imported.
 
 There are some additional premake direcives available which are used to handle assets associated with the release and to declare what this package exports.
 
@@ -55,24 +50,27 @@ Exports home folder of the package.
 
 Exports a folder in the package named include.
 
+### package_export_project
 
-### package_export_links
-
-Exports something that will be linked.
-
-When a project uses package_links on this package, it will add all of the libraries specified to the link.
-
-Examples:
-
-    package_export_links 'foo'
-
-In premake, projects can be linked in addition to specific libraries. If there are projects declared in the premake5-package.lua file, they can be exported using the package_export_library directive.
+If there are projects declared in the premake5-package.lua file, they can be exported using the package_export_project directive. 
 
 Example:
 
     project 'foo'
         type 'StaticLib'
         package_export_links 'foo'
+
+An optional label can be specified when the project
+
+### package_export_lib
+
+Exports a library that can be linked.
+The path to the library is relative to the start of the repository.
+When package_links is used, any relevant libraries will be added.
+
+Examples:
+
+    package_export_lib 'lib/protobuf.lib'
 
 ### package_asset
 
@@ -84,19 +82,21 @@ Here's an asset that could be associated with the release of the Oracle Instant 
 
     package_asset 'instantclient-basiclite-windows.x64-12.1.0.2.0.zip'
 
-If the asset is a zip file, it will be unzipped into the cache. This directive returns an object that can be referred to later.
+If the asset is a zip file, it will be unzipped into the cache. This directive returns the path to the asset in the cache, or the directory if it was a zip file that was unzipped. This path can be used in export directives.
 
-### package_asset:include
+## Multi-packages
 
-Using the object that was returned by package_asset, export an include path from it.
+Sometimes packages can contain different things that can be consumed. To facilitate that, packages can specify labels when the export.
 
-### package_asset:library
+In the package named 'google/protobuf' there could be three projects exported
 
-Using the object that was returned by package_asset, export a library for linking. If there are no parameters, it's assumed that the entire asset is a library. If there is a parameter, then it refers to a file inside of the library.
+    package_export_project('google-protobuf-lite', 'lib-lite')
+    package_export_project('google-protobuf', 'lib')
+    package_export_project('google-protoc', 'compiler')
 
-Examples:
+To link with a specific library, the label name can be provided
 
-    package_asset('win32-i386.lib').library()
+    package_import_links('google/protobuf', 'lib-lite')
 
 
 ## Package best practices
