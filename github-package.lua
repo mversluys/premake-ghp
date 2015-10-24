@@ -168,7 +168,28 @@ local function _export(to, to_name, paths, label, isrelative)
 
 end
 
-local function _import(package_name, label, func, func_name)
+local function _label_test(label, label_filter)
+
+	-- if no filter was provided, success!
+	if not label_filter then
+		return true
+	end
+
+	-- if the filter is a table, check to see if the label is in it
+	if type(label_filter) == 'table' then
+		for _, l in ipairs(label_filter) do
+			if label == l then
+				return true
+			end
+		end
+	end
+
+	-- otherwise it needs to be an exact match
+	return label_filter == label
+
+end
+
+local function _import(package_name, label_filter, func, func_name)
 
 	-- preserve the current premake filter
 	local filter = premake.configset.getFilter(premake.api.scope.current)
@@ -177,9 +198,7 @@ local function _import(package_name, label, func, func_name)
 	local package = ghp.packages[package_name]
 	if package then
 		for _, i in ipairs(package[func_name]) do
-
-			-- if a label was supplied, match it
-			if not label or label == i[1] then
+			if _label_test(i[1], label_filter) then 
 				verbosef(' IMPORT: %s %s %s', package_name, func_name, i[3])
 
 				-- apply the filter that was captured at export
@@ -223,23 +242,23 @@ end
 
 -- functions used by consumers of packages
 
-function ghp.includedirs(package, label)
-	_import(package, label, includedirs, 'includedirs')
+function ghp.includedirs(package, label_filter)
+	_import(package, label_filter, includedirs, 'includedirs')
 end
 
 -- libdirs shouldn't be neccesary, all exported library references "should" be absolute
---function package_libdirs(package, label)
---	_import(package, label, libdirs, 'libdirs')
+--function package_libdirs(package, label_filter)
+--	_import(package, label_filter, libdirs, 'libdirs')
 --end
 
-function ghp.links(package, label)
-	_import(package, label, links, 'links')
+function ghp.links(package, label_filter)
+	_import(package, label_filter, links, 'links')
 end
 
-function ghp.use(package, label)
-	ghp.includedirs(package, label)
---	ghp.libdirs(package, label)
-	ghp.links(package, label)
+function ghp.use(package, label_filter)
+	ghp.includedirs(package, label_filter)
+--	ghp.libdirs(package, label_filter)
+	ghp.links(package, label_filter)
 end
 
 -- import a package given a name and release
