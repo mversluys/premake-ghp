@@ -5,5 +5,6 @@
 ---
 
 return {
+	'_preload.lua',
 	'github-package.lua',
 }

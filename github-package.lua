@@ -7,34 +7,38 @@
 print 'GitHub Package module...'
 
 premake.modules.github_package = {}
-local github_package = premake.modules.github_package
+ghp = premake.modules.github_package
 
-github_package.packages = {}
-github_package.current = nil
+ghp.packages = {}
+ghp.current = nil
 
-github_package.hostname = 'https://github.com'
-github_package.local_packages  = { 'packages' }
+ghp.hostname = 'https://github.com'
+ghp.local_packages  = { 'ghp' }
 
 local function _cache_location()
-	local folder = os.getenv('PREMAKE_PACKAGE_CACHE_PATH')
+	local folder = os.getenv('PREMAKE_GITHUB_PACKAGE_CACHE')
 	if folder then
 		return folder
 	else
 		if os.get() == 'windows' then
 			local temp = os.getenv('TEMP')
 			if temp then
-				return path.join(temp, 'premake_package_cache')
-			end
-			local user_profile = os.getenv('USERPROFILE')
-			if user_profile then
-				return path.join(user_profile, 'AppData', 'Local', 'Temp', 'premake_package_cache')
+				return path.join(temp, 'ghp_cache')
 			else
 				return 'c:\\temp'
 			end
 		end
 
 		-- assume that we're on something that's using a standard file system heirachy
-		return '/var/tmp/premake_package_cache'
+		return '/var/tmp/ghp_cache'
+	end
+end
+
+local function _local_packages()
+	if type(ghp.local_packages) == 'string' then
+		return { ghp.local_packages }
+	else
+		return ghp.local_packages
 	end
 end
 
@@ -43,7 +47,7 @@ local function _download_release(organization, repository, release)
 	local p = path.normalize(path.join(organization, repository, release, 'release'))
 
 	-- see if the file exists locally
-	for i, folder in pairs(github_package.local_packages) do
+	for _, folder in ipairs(_local_packages()) do
 		local location = path.join(folder, p)
 		if os.isdir(location) then
 			verbosef('  LOCAL: %s', location)
@@ -59,7 +63,7 @@ local function _download_release(organization, repository, release)
 	end
 
 	-- try to download it
-	local source = github_package.hostname .. '/' .. organization .. '/' .. repository .. '/archive/' .. release  .. '.zip'
+	local source = ghp.hostname .. '/' .. organization .. '/' .. repository .. '/archive/' .. release  .. '.zip'
 	local destination = location .. '.zip'
 
 	print('  DOWNLOAD: ' .. source)
@@ -107,7 +111,7 @@ local function _download_asset(organization, repository, release, asset)
 	end
 
 	-- see if it the file exists locally
-	for i, folder in pairs(github_package.local_packages) do
+	for _, folder in ipairs(_local_packages()) do
 		local location = path.join(folder, d)
 		if os.isdir(location) then
 			verbosef('  LOCAL: %s', location)
@@ -123,7 +127,7 @@ local function _download_asset(organization, repository, release, asset)
 	end
 
 	-- try to download it
-	local source = github_package.hostname .. '/' .. organization .. '/' .. repository .. '/releases/download/' .. release  .. '/' .. asset
+	local source = ghp.hostname .. '/' .. organization .. '/' .. repository .. '/releases/download/' .. release  .. '/' .. asset
 	local destination = path.join(_cache_location(), p)
 
 	print('  DOWNLOAD: ' .. source)
@@ -170,7 +174,7 @@ local function _import(package_name, label, func, func_name)
 	local filter = premake.configset.getFilter(premake.api.scope.current)
 
 	-- resolve the package
-	local package = github_package.packages[package_name]
+	local package = ghp.packages[package_name]
 	if package then
 		for _, i in ipairs(package[func_name]) do
 
@@ -193,33 +197,33 @@ local function _import(package_name, label, func, func_name)
 	premake.configset.setFilter(premake.api.scope.current, filter)
 end
 
--- functions used inside of premake5-package.lua
+-- functions used inside of premake5-ghp.lua
 
-function package_export_includedirs(paths, label)
-	_export(github_package.current.includedirs, 'includedirs', paths, label, true)
+function ghp.export_includedirs(paths, label)
+	_export(ghp.current.includedirs, 'includedirs', paths, label, true)
 end
 
 -- libdirs shouldn't be neccesary, all exported library references "should" be absolute
 --function package_export_libdirs(paths, label)
---	_export(github_package.current.libdirs, 'libdirs', paths, label, true)
+--	_export(ghp.current.libdirs, 'libdirs', paths, label, true)
 --end
 
-function package_export_library(paths, label)
-	_export(github_package.current.links, 'links', paths, label, true)
+function ghp.export_library(paths, label)
+	_export(ghp.current.links, 'links', paths, label, true)
 end
 
-function package_export_project(paths, label)
-	_export(github_package.current.links, 'links', paths, label, false)
+function ghp.export_project(paths, label)
+	_export(ghp.current.links, 'links', paths, label, false)
 end
 
-function package_asset(name)
-	local package = github_package.current
+function ghp.asset(name)
+	local package = ghp.current
 	return _download_asset(package.organization, package.repository, package.release, name)
 end
 
 -- functions used by consumers of packages
 
-function package_includedirs(package, label)
+function ghp.includedirs(package, label)
 	_import(package, label, includedirs, 'includedirs')
 end
 
@@ -228,28 +232,28 @@ end
 --	_import(package, label, libdirs, 'libdirs')
 --end
 
-function package_links(package, label)
+function ghp.links(package, label)
 	_import(package, label, links, 'links')
 end
 
-function package_use(package, label)
-	package_includedirs(package, label)
---	package_libdirs(package, label)
-	package_links(package, label)
+function ghp.use(package, label)
+	ghp.includedirs(package, label)
+--	ghp.libdirs(package, label)
+	ghp.links(package, label)
 end
 
 -- import a package given a name and release
-function package_import(name, release)
+function ghp.import(name, release)
 
 	-- has this package already been imported?
-	if github_package.packages[name] then
+	if ghp.packages[name] then
 		return
 	end
 
 	-- the name should contain the organization and repository
 	organization, repository = name:match('(%S+)/(%S+)')
 
-	verbosef(' PACKAGE: %s/%s %s', organization, repository, release)
+	verbosef(' GITHUB PACKAGE: %s/%s %s', organization, repository, release)
 
 	local directory = _download_release(organization, repository, release)
 
@@ -266,18 +270,18 @@ function package_import(name, release)
 		libdirs = {},
 	}
 
-	github_package.current = package
+	ghp.current = package
 
 	-- look for the premake package file
-	local path_premake = path.join(directory, 'premake5-package.lua')
+	local path_premake = path.join(directory, 'premake5-ghp.lua')
 	if os.isfile(path_premake) then
 		package.func = dofile(path_premake)
 	end
 
-	github_package.current = nil
+	ghp.current = nil
 
 	-- save in the package registry
-	github_package.packages[name] = package
+	ghp.packages[name] = package
 
 end
 
@@ -287,13 +291,13 @@ end
 premake.override(premake.project, 'new', function(base, name)
 	local project = base(name)
 
-	-- place the project in a group named packages
-	project.group = 'packages'
+	-- place the project in a group named ghp
+	project.group = 'ghp'
 
-	if github_package.current then
+	if ghp.current then
 
 		-- save the package in the project ..
---		project.package = github_package.current.name:gsub('/', '-')
+--		project.package = ghp.current.name:gsub('/', '-')
 
 		-- set some default package values.
 --		project.blocks[1].targetdir = bnet.lib_dir
@@ -304,5 +308,4 @@ premake.override(premake.project, 'new', function(base, name)
 	return project
 end)
 
-
-return github_package
+return ghp

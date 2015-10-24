@@ -6,6 +6,6 @@
 
 include('github-package.lua')
 
---return function(cfg)
---	return true
---end
+return function(cfg)
+	return true
+end
