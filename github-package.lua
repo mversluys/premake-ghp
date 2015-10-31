@@ -189,27 +189,22 @@ local function _label_test(label, label_filter)
 
 end
 
-local function _import(package_name, label_filter, func, func_name)
+local function _import(package, label_filter, func, func_name)
 
 	-- preserve the current premake filter
 	local filter = premake.configset.getFilter(premake.api.scope.current)
 
 	-- resolve the package
-	local package = ghp.packages[package_name]
-	if package then
-		for _, i in ipairs(package[func_name]) do
-			if _label_test(i[1], label_filter) then 
-				verbosef(' IMPORT: %s %s %s', package_name, func_name, i[3])
+	for _, i in ipairs(package[func_name]) do
+		if _label_test(i[1], label_filter) then 
+			verbosef('GHP %s: %s %s', func_name, package.name, i[3])
 
-				-- apply the filter that was captured at export
-				premake.configset.setFilter(premake.api.scope.current, i[2])
+			-- apply the filter that was captured at export
+			premake.configset.setFilter(premake.api.scope.current, i[2])
 
-				-- call the function with the parameter that was captured at export
-				func { i[3] }
-			end
+			-- call the function with the parameter that was captured at export
+			func { i[3] }
 		end
-	else
-		printf(' IMPORT: could not resolve package name %s', package_name)
 	end
 
 	-- restore the current premake filter
@@ -242,23 +237,32 @@ end
 
 -- functions used by consumers of packages
 
-function ghp.includedirs(package, label_filter)
-	_import(package, label_filter, includedirs, 'includedirs')
+function ghp.includedirs(package_name, label_filter)
+	local package = ghp.packages[package_name]
+	if package then
+		_import(package, label_filter, includedirs, 'includedirs')
+	else
+		printf(' ghp.includedirs could not resolve package name %s', package_name)
+	end
 end
 
--- libdirs shouldn't be neccesary, all exported library references "should" be absolute
---function package_libdirs(package, label_filter)
---	_import(package, label_filter, libdirs, 'libdirs')
---end
-
-function ghp.links(package, label_filter)
-	_import(package, label_filter, links, 'links')
+function ghp.links(package_name, label_filter)
+	local package = ghp.packages[package_name]
+	if package then
+		_import(package, label_filter, links, 'links')
+	else
+		printf(' ghp.links could not resolve package name %s', package_name)
+	end
 end
 
-function ghp.use(package, label_filter)
-	ghp.includedirs(package, label_filter)
---	ghp.libdirs(package, label_filter)
-	ghp.links(package, label_filter)
+function ghp.use(package_name, label_filter)
+	local package = ghp.packages[package_name]
+	if package then
+		_import(package, label_filter, includedirs, 'includedirs')
+		_import(package, label_filter, links, 'links')
+	else
+		printf(' ghp.use could not resolve package name %s', package_name)
+	end
 end
 
 -- import a package given a name and release
@@ -272,7 +276,7 @@ function ghp.import(name, release)
 	-- the name should contain the organization and repository
 	organization, repository = name:match('(%S+)/(%S+)')
 
-	verbosef(' GITHUB PACKAGE: %s/%s %s', organization, repository, release)
+	printf('GITHUB PACKAGE: %s/%s %s', organization, repository, release)
 
 	local directory = _download_release(organization, repository, release)
 
@@ -312,17 +316,6 @@ premake.override(premake.project, 'new', function(base, name)
 
 	-- place the project in a group named ghp
 	project.group = 'ghp'
-
-	if ghp.current then
-
-		-- save the package in the project ..
---		project.package = ghp.current.name:gsub('/', '-')
-
-		-- set some default package values.
---		project.blocks[1].targetdir = bnet.lib_dir
---		project.blocks[1].objdir    = path.join(bnet.obj_dir, name)
---		project.blocks[1].location  = path.join(location(), 'packages', name)
-	end
 
 	return project
 end)
