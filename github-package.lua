@@ -88,7 +88,7 @@ local function _download_release(organization, repository, release)
 		verbosef('   CLEANING: %s', extra_folder)
 		os.rename(extra_path, location .. '-temp')
 		-- remove the old location
-		os.remove(location)
+		os.rmdir(location)
 		-- then replace it with the new one
 		os.rename(location .. '-temp', location)
 	end
