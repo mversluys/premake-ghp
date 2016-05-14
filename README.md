@@ -1,27 +1,19 @@
-# Premake github packages
+# Premake GitHub packages
 
-An extension to premake for consuming packages from github repositories.
+An extension to premake for consuming packages from GitHub repositories.
 
 This extension makes it easy to share and consume C/C++ projects!
 
 Import this extension by placing it somewhere that premake can find it then use.
 
-    require 'github-package'
+    require 'ghp'
 
-Import packages using the **ghp.import** function which refers to a GitHub organization/repository and release.
+Import packages using the **ghp.import** function in your workspace which refers to a GitHub organization/repository and release.
 
     ghp.import('google/protobuf', '3.0.0-beta-1')
 
-Pull header files into your project using **ghp.includedirs**.
-
-    ghp.includedirs('google/protobuf')
-
-Link the libraries exported by the package using **ghp.links**.
-
-    ghp.links('google/protobuf')
-
-To pull in the headers and link the libraries, there's a convenience function named **ghp.use**.
+Pull include directies and libraries into your projects with **ghp.use**.
 
     ghp.use('google/protobuf')
 
-For more information, including how to publish your own packages, see the [wiki](https://github.com/mversluys/github-package/wiki).
+For more information, including how to publish your own packages, see the [wiki](https://github.com/mversluys/premake-ghp/wiki).

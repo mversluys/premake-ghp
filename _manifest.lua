@@ -6,5 +6,5 @@
 
 return {
 	'_preload.lua',
-	'github-package.lua',
+	'ghp.lua',
 }

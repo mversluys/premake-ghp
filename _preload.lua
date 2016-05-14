@@ -4,7 +4,7 @@
 -- Copyright (c) 2015 Matthew Versluys
 ---
 
-include('github-package.lua')
+include('ghp.lua')
 
 return function(cfg)
 	return true

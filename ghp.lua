@@ -1,38 +1,49 @@
 ---
--- github-package/github-package.lua
--- Premake github package management extension
+-- ghp/ghp.lua
+-- Premake GitHub package management extension
 -- Copyright (c) 2015 Matthew Versluys
 ---
 
 print 'GitHub Package module...'
 
-premake.modules.github_package = {}
-ghp = premake.modules.github_package
+json = require 'lunajson'
+
+premake.modules.ghp = {}
+ghp = premake.modules.ghp
+ghp._VERSION = "0.2.0"
+
+newoption {
+	trigger = "ghp-cache",
+	value = "DIRECTORY",
+	description = "Directory to use for the package cache"
+}
+
+newoption {
+	trigger = "ghp-environment",
+	value = "FILE",	
+	description = "File to write environment variables into."
+}
+
+newoption {
+	trigger = "ghp-hostname",
+	value = "HOST",	
+	description = "The GitHib host to retrieve packages from. Change to retrieve from GitHib enterprise"
+}
+
+newoption {
+	trigger = "ghp-user",
+	value = "USERNAME[:PASSWORD]",
+	description = "The user name and optional password used to retrieve packages from GitHub"
+}
+
 
 ghp.packages = {}
 ghp.current = nil
+ghp.environment = nil
+ghp.hostname = nil
+ghp.user = nil
 
-ghp.hostname = 'https://github.com'
 ghp.local_packages  = { 'ghp' }
-
-local function _cache_location()
-	local folder = os.getenv('PREMAKE_GITHUB_PACKAGE_CACHE')
-	if folder then
-		return folder
-	else
-		if os.get() == 'windows' then
-			local temp = os.getenv('TEMP')
-			if temp then
-				return path.join(temp, 'ghp_cache')
-			else
-				return 'c:\\temp'
-			end
-		end
-
-		-- assume that we're on something that's using a standard file system heirachy
-		return '/var/tmp/ghp_cache'
-	end
-end
 
 local function _local_packages()
 	if type(ghp.local_packages) == 'string' then
@@ -40,6 +51,109 @@ local function _local_packages()
 	else
 		return ghp.local_packages
 	end
+end
+
+local function _get_cache()
+
+	-- check for command line
+	if _OPTIONS['ghp-cache'] then
+		return _OPTIONS['ghp-cache']
+	end
+
+	-- check envronment variable
+	local env = os.getenv('GHP_CACHE')
+	if env then
+		return env
+	end
+
+	-- use default location
+	if os.get() == 'windows' then
+		local temp = os.getenv('TEMP')
+		if temp then
+			return path.join(temp, 'ghp_cache')
+		else
+			return 'c:\\temp'
+		end
+	end
+
+	-- assume that we're on something that's using a standard file system heirachy
+	return '/var/tmp/ghp_cache'
+end
+
+local function _get_user()
+
+	if ghp.user then
+		return ghp.user
+	end
+
+	local user = nil
+
+	-- check for command line
+	if _OPTIONS['ghp-user'] then
+		user = _OPTIONS['ghp-user']
+	else 
+		-- check for environment variable
+		user = os.getenv('GHP_USER')
+	end
+
+	if user then
+		if user:find(':') then
+			ghp.user = user
+		else
+			ghp.user = user .. ':' .. os.getpass('Enter GitHub password for user "' .. user .. '": ')
+		end
+	end
+
+	return ghp.user
+
+end
+
+local function _get_environment()
+
+	if ghp.environment then
+		return ghp.environment
+	end
+
+	local filename = nil
+
+	-- check for command line
+	if _OPTIONS['ghp-environment'] then
+		filename = _OPTIONS['ghp-environment']
+	else
+		-- check for environment variable
+		filename = os.getenv('GHP_ENVIRONMENT') 	
+	end
+
+	-- if we found a filename, open the file
+	if filename then
+		ghp.environment = io.open(filename, 'w')
+	end
+
+	return ghp.environment
+end
+
+local function _get_hostname()
+
+	if ghp.hostname then
+		return ghp.hostname
+	end
+
+	-- check for command line
+	if _OPTIONS['ghp-hostname'] then
+		ghp.hostname = _OPTIONS['ghp-hostname']
+	else
+		-- check for environment variable
+		local env = os.getenv('GHP_HOSTNAME')
+		if env then
+			ghp.hostname = env
+			return ghp.hostname
+		else
+			-- use default hostname
+			ghp.hostname = 'https://api.github.com'
+		end
+	end
+
+	return ghp.hostname
 end
 
 local function _download_release(organization, repository, release)
@@ -56,19 +170,28 @@ local function _download_release(organization, repository, release)
 	end
 
 	-- see if it's cached
-	local location = path.join(_cache_location(), p)
+	local location = path.join(_get_cache(), p)
 	if os.isdir(location) then
 		verbosef('  CACHED: %s', location)
 		return location
 	end
 
-	-- try to download it
-	local source = ghp.hostname .. '/' .. organization .. '/' .. repository .. '/archive/' .. release  .. '.zip'
+	-- try to download it 
+	local api_url = _get_hostname() .. '/repos/' .. organization .. '/' .. repository .. '/releases/tags/' .. release
+	local release_json, result_error = http.get(api_url, nil, _get_user())
+
+	if not release_json then
+		premake.error('Unable to retrieve release information from GitHub from %s\n%s', api_url, result_error)
+	end
+
+	local source = json.decode(release_json)['zipball_url']
+
+	--local source = _get_hostname() .. '/repos/' .. organization .. '/' .. repository .. '/zipball/' .. release
 	local destination = location .. '.zip'
 
 	print('  DOWNLOAD: ' .. source)
 	os.mkdir(path.getdirectory(destination))
-	local return_str, return_code = http.download(source, destination, nil)
+	local return_str, return_code = http.download(source, destination, nil, _get_user())
 	if return_code ~= 0 then
 		premake.error('Download of file %s returned: %s\nCURL_ERROR_CODE(%d)', source, return_str, return_code)
 	end
@@ -77,22 +200,24 @@ local function _download_release(organization, repository, release)
 	verbosef('   UNZIP: %s', destination)
 	zip.extract(destination, location)
 
-	-- github puts an extra folder in the archive, if we can find it, let's remove it
-	-- TODO: figure out how to request the archive from github without the extra folder
-	extra_folder = repository .. '-' .. release:gsub('^v', '')
-	extra_path = path.join(location, extra_folder)
+	-- GitHub puts an extra folder in the archive, if we can find it, let's remove it
+	-- TODO: figure out how to request the archive from GitHub without the extra folder
+	local cruft = os.matchdirs(path.join(location, organization .. '-' .. repository .. '-*'))
 
-	if os.isdir(extra_path) then
-		-- what we want to do is rename extra_path to location
+	if #cruft == 1 then
+		local cruft_path = cruft[1]
+
+		-- what we want to do is rename cruft_path to location
 		-- because it's inside of location we need to move it out of location
-		verbosef('   CLEANING: %s', extra_folder)
-		os.rename(extra_path, location .. '-temp')
+		verbosef('   CLEANING: %s', cruft_path)
+		os.rename(cruft_path, location .. '-temp')
 		-- remove the old location
 		os.rmdir(location)
 		-- then replace it with the new one
 		os.rename(location .. '-temp', location)
 	end
 
+	-- remove the downloaded file
 	os.remove(destination)
 
 	return location
@@ -120,20 +245,44 @@ local function _download_asset(organization, repository, release, asset)
 	end
 
 	-- see if it's cached
-	local location = path.join(_cache_location(), d)
+	local location = path.join(_get_cache(), d)
 	if os.isdir(location) then
 		verbosef('  CACHED: %s', location)
 		return location
 	end
 
 	-- try to download it
-	local source = ghp.hostname .. '/' .. organization .. '/' .. repository .. '/releases/download/' .. release  .. '/' .. asset
-	local destination = path.join(_cache_location(), p)
+	local api_url = _get_hostname() .. '/repos/' .. organization .. '/' .. repository .. '/releases/tags/' .. release
+	local release_json, result_error = http.get(api_url, nil, _get_credentials())
+
+	if not release_json then
+		premake.error('Unable to retrieve release information from GitHub from %s\n%s', api_url, result_error)
+	end
+
+	local release_info = json.decode(release_json)
+
+	local asset_url = nil
+	for _, asset_info in release_info['assets'] do
+		if asset_info['name'] == asset then
+			asset_url = asset_info['url']
+			break
+		end
+	end
+
+	if not asset_url then
+		premake.error('Unable to find asset named %s in release %s/%s/%s', asset, organization, repository, release)
+	end
+
+	local destination = path.join(_get_cache(), p)
+
+	-- try to download it
+	local source = asset_url
+	local destination = path.join(_get_cache(), p)
 
 	print('  DOWNLOAD: ' .. source)
 
 	os.mkdir(path.getdirectory(destination))
-	local return_str, return_code = http.download(source, destination, nil)
+	local return_str, return_code = http.download(source, destination, nil, _get_credentials())
 	if return_code ~= 0 then
 		premake.error('Download of file %s returned: %s\nCURL_ERROR_CODE(%d)', source, return_str, return_code)
 	end
@@ -214,23 +363,39 @@ end
 -- functions used inside of premake5-ghp.lua
 
 function ghp.export_includedirs(paths, label)
+	if not ghp.current then
+		premake.error('ghp.export_includedirs can only be used inside of packages')
+	end
 	_export(ghp.current.includedirs, 'includedirs', paths, label, true)
 end
 
 -- libdirs shouldn't be neccesary, all exported library references "should" be absolute
 --function package_export_libdirs(paths, label)
+--	if not ghp.current then
+--		premake.error('ghp.export_includedirs can only be used inside of packages')
+--	end
 --	_export(ghp.current.libdirs, 'libdirs', paths, label, true)
 --end
 
 function ghp.export_library(paths, label)
+	if not ghp.current then
+		premake.error('ghp.export_includedirs can only be used inside of packages')
+	end
 	_export(ghp.current.links, 'links', paths, label, true)
 end
 
 function ghp.export_project(paths, label)
+	if not ghp.current then
+		premake.error('ghp.export_includedirs can only be used inside of packages')
+	end
 	_export(ghp.current.links, 'links', paths, label, false)
 end
 
 function ghp.asset(name)
+	if not ghp.current then
+		premake.error('ghp.export_includedirs can only be used inside of packages')
+	end
+
 	local package = ghp.current
 	return _download_asset(package.organization, package.repository, package.release, name)
 end
@@ -292,6 +457,12 @@ function ghp.import(name, release)
 		links = {},
 		libdirs = {},
 	}
+
+	-- add to the environment file
+	local env = _get_environment()
+	if env then 
+		env:write('GHP_' .. string.upper(organization) .. '_' .. string.upper(repository) .. '=' .. path.getabsolute(directory) .. '\n')
+	end
 
 	ghp.current = package
 
