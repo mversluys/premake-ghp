@@ -13,6 +13,12 @@ ghp = premake.modules.ghp
 ghp._VERSION = "0.2.0"
 
 newoption {
+	trigger = "ghp-api",
+	value = "URL",	
+	description = "The url of the GitHib api to use. Change to retrieve from GitHib enterprise"
+}
+
+newoption {
 	trigger = "ghp-cache",
 	value = "DIRECTORY",
 	description = "Directory to use for the package cache"
@@ -25,12 +31,6 @@ newoption {
 }
 
 newoption {
-	trigger = "ghp-hostname",
-	value = "HOST",	
-	description = "The GitHib host to retrieve packages from. Change to retrieve from GitHib enterprise"
-}
-
-newoption {
 	trigger = "ghp-user",
 	value = "USERNAME[:PASSWORD]",
 	description = "The user name and optional password used to retrieve packages from GitHub"
@@ -39,8 +39,10 @@ newoption {
 
 ghp.packages = {}
 ghp.current = nil
+
+ghp.api = nil
+ghp.cache = nil
 ghp.environment = nil
-ghp.hostname = nil
 ghp.user = nil
 
 ghp.local_packages  = { 'ghp' }
@@ -55,29 +57,39 @@ end
 
 local function _get_cache()
 
+	if ghp.cache then
+		return ghp.cache
+	end
+
 	-- check for command line
 	if _OPTIONS['ghp-cache'] then
-		return _OPTIONS['ghp-cache']
-	end
+		ghp.cache = _OPTIONS['ghp-cache']
+	else
 
-	-- check envronment variable
-	local env = os.getenv('GHP_CACHE')
-	if env then
-		return env
-	end
-
-	-- use default location
-	if os.get() == 'windows' then
-		local temp = os.getenv('TEMP')
-		if temp then
-			return path.join(temp, 'ghp_cache')
+		-- check envronment variable
+		local env = os.getenv('GHP_CACHE')
+		if env then
+			ghp.cache = env
 		else
-			return 'c:\\temp'
+
+			-- use default location
+			if os.get() == 'windows' then
+				local temp = os.getenv('TEMP')
+				if temp then
+					ghp.cache = path.join(temp, 'ghp_cache')
+				else
+					ghp.cache = 'c:\\temp'
+				end
+			else
+
+				-- assume that we're on something that's using a standard file system heirachy
+				ghp.cache = '/var/tmp/ghp_cache'
+			end
 		end
 	end
 
-	-- assume that we're on something that's using a standard file system heirachy
-	return '/var/tmp/ghp_cache'
+	verbosef('  caching packages at %s', ghp.cache)
+	return ghp.cache
 end
 
 local function _get_user()
@@ -126,34 +138,36 @@ local function _get_environment()
 
 	-- if we found a filename, open the file
 	if filename then
+		verbosef('  writing environment to %s', filename)
 		ghp.environment = io.open(filename, 'w')
 	end
 
 	return ghp.environment
 end
 
-local function _get_hostname()
+local function _get_api()
 
-	if ghp.hostname then
-		return ghp.hostname
+	if ghp.api then
+		return ghp.api
 	end
 
 	-- check for command line
-	if _OPTIONS['ghp-hostname'] then
-		ghp.hostname = _OPTIONS['ghp-hostname']
+	if _OPTIONS['ghp-api'] then
+		ghp.api = _OPTIONS['ghp-api']
 	else
 		-- check for environment variable
-		local env = os.getenv('GHP_HOSTNAME')
+		local env = os.getenv('GHP_API')
 		if env then
-			ghp.hostname = env
-			return ghp.hostname
+			ghp.api = env
+			return ghp.api
 		else
-			-- use default hostname
-			ghp.hostname = 'https://api.github.com'
+			-- use default url
+			ghp.api = 'https://api.github.com'
 		end
 	end
 
-	return ghp.hostname
+	verbosef('  using api url %s', ghp.api)
+	return ghp.api
 end
 
 local function _download_release(organization, repository, release)
@@ -177,7 +191,7 @@ local function _download_release(organization, repository, release)
 	end
 
 	-- try to download it 
-	local api_url = _get_hostname() .. '/repos/' .. organization .. '/' .. repository .. '/releases/tags/' .. release
+	local api_url = _get_api() .. '/repos/' .. organization .. '/' .. repository .. '/releases/tags/' .. release
 	local release_json, result_error = http.get(api_url, nil, _get_user())
 
 	if not release_json then
@@ -186,7 +200,7 @@ local function _download_release(organization, repository, release)
 
 	local source = json.decode(release_json)['zipball_url']
 
-	--local source = _get_hostname() .. '/repos/' .. organization .. '/' .. repository .. '/zipball/' .. release
+	--local source = _get_api() .. '/repos/' .. organization .. '/' .. repository .. '/zipball/' .. release
 	local destination = location .. '.zip'
 
 	print('  DOWNLOAD: ' .. source)
@@ -252,7 +266,7 @@ local function _download_asset(organization, repository, release, asset)
 	end
 
 	-- try to download it
-	local api_url = _get_hostname() .. '/repos/' .. organization .. '/' .. repository .. '/releases/tags/' .. release
+	local api_url = _get_api() .. '/repos/' .. organization .. '/' .. repository .. '/releases/tags/' .. release
 	local release_json, result_error = http.get(api_url, nil, _get_credentials())
 
 	if not release_json then
