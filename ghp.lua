@@ -45,7 +45,7 @@ ghp.cache = nil
 ghp.environment = nil
 ghp.user = nil
 
-ghp.local_packages  = { 'ghp' }
+ghp.local_packages  = { 'ghp_local' }
 
 local function _local_packages()
 	if type(ghp.local_packages) == 'string' then
