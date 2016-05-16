@@ -192,20 +192,18 @@ local function _download_release(organization, repository, release)
 
 	-- try to download it 
 	local api_url = _get_api() .. '/repos/' .. organization .. '/' .. repository .. '/releases/tags/' .. release
-	local release_json, result_error = http.get(api_url, nil, _get_user())
+	local release_json, result_error = http.get(api_url, { userpwd = _get_user() })
 
 	if not release_json then
 		premake.error('Unable to retrieve release information from GitHub from %s\n%s', api_url, result_error)
 	end
 
 	local source = json.decode(release_json)['zipball_url']
-
-	--local source = _get_api() .. '/repos/' .. organization .. '/' .. repository .. '/zipball/' .. release
 	local destination = location .. '.zip'
 
 	print('  DOWNLOAD: ' .. source)
 	os.mkdir(path.getdirectory(destination))
-	local return_str, return_code = http.download(source, destination, nil, _get_user())
+	local return_str, return_code = http.download(source, destination, { userpwd = _get_user() })
 	if return_code ~= 0 then
 		premake.error('Download of file %s returned: %s\nCURL_ERROR_CODE(%d)', source, return_str, return_code)
 	end
@@ -267,7 +265,7 @@ local function _download_asset(organization, repository, release, asset)
 
 	-- try to download it
 	local api_url = _get_api() .. '/repos/' .. organization .. '/' .. repository .. '/releases/tags/' .. release
-	local release_json, result_error = http.get(api_url, nil, _get_credentials())
+	local release_json, result_error = http.get(api_url, { userpwd = _get_user() })
 
 	if not release_json then
 		premake.error('Unable to retrieve release information from GitHub from %s\n%s', api_url, result_error)
@@ -296,7 +294,7 @@ local function _download_asset(organization, repository, release, asset)
 	print('  DOWNLOAD: ' .. source)
 
 	os.mkdir(path.getdirectory(destination))
-	local return_str, return_code = http.download(source, destination, nil, _get_credentials())
+	local return_str, return_code = http.download(source, destination, { userpwd = _get_user() })
 	if return_code ~= 0 then
 		premake.error('Download of file %s returned: %s\nCURL_ERROR_CODE(%d)', source, return_str, return_code)
 	end
