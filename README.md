@@ -10,10 +10,10 @@ Import this extension by placing it somewhere that premake can find it then use.
 
 Import packages using the **ghp.import** function in your workspace which refers to a GitHub organization/repository and release.
 
-    ghp.import('google/protobuf', '3.0.0-beta-1')
+    ghp.import('mversluys/protobuf', '2.6.1')
 
 Pull include directies and libraries into your projects with **ghp.use**.
 
-    ghp.use('google/protobuf')
+    ghp.use('mversluys/protobuf')
 
 For more information, including how to publish your own packages, see the [wiki](https://github.com/mversluys/premake-ghp/wiki).
