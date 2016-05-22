@@ -4,9 +4,10 @@
 -- Copyright (c) 2015 Matthew Versluys
 ---
 
-print 'GitHub Package module...'
+print 'GitHub Package module ... (ghp)'
 
 json = require 'lunajson'
+semver = require 'semver'
 
 premake.modules.ghp = {}
 ghp = premake.modules.ghp
@@ -88,7 +89,7 @@ local function _get_cache()
 		end
 	end
 
-	verbosef('  caching packages at %s', ghp.cache)
+	verbosef('  CACHE LOCATION: %s', ghp.cache)
 	return ghp.cache
 end
 
@@ -138,7 +139,7 @@ local function _get_environment()
 
 	-- if we found a filename, open the file
 	if filename then
-		verbosef('  writing environment to %s', filename)
+		verbosef('  ENVIRONMENT FILE %s', filename)
 		ghp.environment = io.open(filename, 'w')
 	end
 
@@ -166,11 +167,37 @@ local function _get_api()
 		end
 	end
 
-	verbosef('  using api url %s', ghp.api)
+	verbosef('  API URL %s', ghp.api)
 	return ghp.api
 end
 
-local function _download_release(organization, repository, release)
+local function _http_get(url, context)
+
+	local result, result_str, result_code = http.get(url, { userpwd = _get_user() })
+
+	-- TODO: update premake to return the result code from http.get0
+	result_code = -1
+
+	-- TODO: handle lazy authentication so that users don't need to specify on the command line
+
+	if not result then
+		premake.error('%s retrieval of %s failed (%d)\n%s', context, url, result_code, result_str)
+	end
+
+	return result
+end
+
+local function _http_download(url, destination, context)
+	local result_str, result_code = http.download(url, destination, { userpwd = _get_user() })
+
+	-- TODO: handle lazy authentication so that users don't need to specify on the command line
+
+	if result_code ~= 0 then
+		premake.error('%s retrieval of %s failed (%d)\n%s', label, result_code, result_str)
+	end
+end
+
+local function _download_release(organization, repository, release, context)
 
 	local p = path.normalize(path.join(organization, repository, release, 'release'))
 
@@ -192,21 +219,13 @@ local function _download_release(organization, repository, release)
 
 	-- try to download it 
 	local api_url = _get_api() .. '/repos/' .. organization .. '/' .. repository .. '/releases/tags/' .. release
-	local release_json, result_error = http.get(api_url, { userpwd = _get_user() })
-
-	if not release_json then
-		premake.error('Unable to retrieve release information from GitHub from %s\n%s', api_url, result_error)
-	end
-
+	local release_json = _http_get(api_url, context)
 	local source = json.decode(release_json)['zipball_url']
 	local destination = location .. '.zip'
 
 	print('  DOWNLOAD: ' .. source)
 	os.mkdir(path.getdirectory(destination))
-	local return_str, return_code = http.download(source, destination, { userpwd = _get_user() })
-	if return_code ~= 0 then
-		premake.error('Download of file %s returned: %s\nCURL_ERROR_CODE(%d)', source, return_str, return_code)
-	end
+	_http_download(source, destination, context)
 
 	-- unzip it
 	verbosef('   UNZIP: %s', destination)
@@ -235,7 +254,7 @@ local function _download_release(organization, repository, release)
 	return location
 end
 
-local function _download_asset(organization, repository, release, asset)
+local function _download_asset(organization, repository, release, asset, context)
 
 	local f = asset
 	local p = path.normalize(path.join(organization, repository, release, 'assets', f))
@@ -265,13 +284,7 @@ local function _download_asset(organization, repository, release, asset)
 
 	-- try to download it
 	local api_url = _get_api() .. '/repos/' .. organization .. '/' .. repository .. '/releases/tags/' .. release
-	local release_json, result_error = http.get(api_url, { userpwd = _get_user() })
-
-	if not release_json then
-		premake.error('Unable to retrieve release information from GitHub from %s\n%s', api_url, result_error)
-	end
-
-	local release_info = json.decode(release_json)
+	local release_info = json.decode(_http_get(api_url, context))
 
 	local asset_url = nil
 	for _, asset_info in release_info['assets'] do
@@ -282,22 +295,15 @@ local function _download_asset(organization, repository, release, asset)
 	end
 
 	if not asset_url then
-		premake.error('Unable to find asset named %s in release %s/%s/%s', asset, organization, repository, release)
+		premake.error('%s unable to find asset named %s', context, asset)
 	end
-
-	local destination = path.join(_get_cache(), p)
 
 	-- try to download it
-	local source = asset_url
+	print('  DOWNLOAD: ' .. asset_url)
+
 	local destination = path.join(_get_cache(), p)
-
-	print('  DOWNLOAD: ' .. source)
-
 	os.mkdir(path.getdirectory(destination))
-	local return_str, return_code = http.download(source, destination, { userpwd = _get_user() })
-	if return_code ~= 0 then
-		premake.error('Download of file %s returned: %s\nCURL_ERROR_CODE(%d)', source, return_str, return_code)
-	end
+	_http_download(asset_url, destination, context)
 
 	-- if it's a zip, unzip it
 	if path.getextension(asset) == '.zip' then
@@ -358,7 +364,7 @@ local function _import(package, label_filter, func, func_name)
 	-- resolve the package
 	for _, i in ipairs(package[func_name]) do
 		if _label_test(i[1], label_filter) then 
-			verbosef('GHP %s: %s %s', func_name, package.name, i[3])
+			verbosef('ghp.%s %s %s', func_name, package.name, i[3])
 
 			-- apply the filter that was captured at export
 			premake.configset.setFilter(premake.api.scope.current, i[2])
@@ -409,7 +415,8 @@ function ghp.asset(name)
 	end
 
 	local package = ghp.current
-	return _download_asset(package.organization, package.repository, package.release, name)
+	local context = string.format('ghp.asset %s %s %s', package.name, package.release, name)
+	return _download_asset(package.organization, package.repository, package.release, name, context)
 end
 
 -- functions used by consumers of packages
@@ -419,7 +426,7 @@ function ghp.includedirs(package_name, label_filter)
 	if package then
 		_import(package, label_filter, includedirs, 'includedirs')
 	else
-		printf(' ghp.includedirs could not resolve package name %s', package_name)
+		premake.error('ghp.includedirs could not resolve package name %s', package_name)
 	end
 end
 
@@ -428,7 +435,7 @@ function ghp.links(package_name, label_filter)
 	if package then
 		_import(package, label_filter, links, 'links')
 	else
-		printf(' ghp.links could not resolve package name %s', package_name)
+		premake.error('ghp.links could not resolve package name %s', package_name)
 	end
 end
 
@@ -438,24 +445,31 @@ function ghp.use(package_name, label_filter)
 		_import(package, label_filter, includedirs, 'includedirs')
 		_import(package, label_filter, links, 'links')
 	else
-		printf(' ghp.use could not resolve package name %s', package_name)
+		premake.error('ghp.use could not resolve package name %s', package_name)
 	end
 end
 
 -- import a package given a name and release
 function ghp.import(name, release)
 
+	if ghp.current then
+		premake.error('ghp.import can not be used inside of packages, currently in package %s', ghp.current.name)
+	end
+
 	-- has this package already been imported?
 	if ghp.packages[name] then
-		return
+		premake.error('ghp.import package %s has already been imported', name)
 	end
 
 	-- the name should contain the organization and repository
-	organization, repository = name:match('(%S+)/(%S+)')
+	local organization, repository = name:match('(%S+)/(%S+)')
 
-	printf('GITHUB PACKAGE: %s/%s %s', organization, repository, release)
+	-- version is the numerical and dotted part of the release
+	local version = release:match('(%d[%d\\\.]+%d)')
+	local context = string.format('ghp.import %s %s', name, release)
 
-	local directory = _download_release(organization, repository, release)
+	printf('%s (%s)', context, version)
+	local directory = _download_release(organization, repository, release, context)
 
 	-- create the package
 	local package = {
@@ -464,6 +478,7 @@ function ghp.import(name, release)
 		organization = organization,
 		repository = repository,
 		release = release,
+		version = version,
 		location = nil,
 		includedirs = {},
 		links = {},
@@ -490,6 +505,56 @@ function ghp.import(name, release)
 	ghp.packages[name] = package
 
 end
+
+-- require a package to have been imported
+function ghp.require(name, version)
+	if not ghp.current then
+		premake.error('ghp.require can only be used inside of packages')
+	end
+
+	local package = ghp.packages[name]
+
+	if not package then
+		premake.error('ghp.require package %s requires %s %s %s package not found', ghp.current.name, name, operator, version)
+	end
+
+	local operator, version = version:match('(.)(.+)')
+
+	verbosef('  REQUIRE: %s %s%s', name, operator, version)
+
+	local current_version = semver(package.version)
+	local compare_version = semver(version)
+
+	if operator == '=' then
+		-- looking for an exact match
+		if compare_version == current_version then
+			return 
+		else
+			premake.error('ghp.require package %s requires %s =%s found version %s', ghp.current.name, name, version, package.version)
+		end
+	end
+
+	if operator == '>' then
+		-- looking for a comparison
+		if compare_version < current_version then
+			return
+		else
+			premake.error('ghp.require package %s requires %s >%s found version %s', ghp.current.name, name, version, package.version)
+		end			
+	end
+
+	if operator == '^' then
+		-- looking for persimistic upgrade 
+		if compare_version ^ current_version then
+			return
+		else
+			premake.error('ghp.require package %s requires %s ^%s found version %s', ghp.current.name, name, version, package.version)
+		end			
+	end
+
+	premake.error('ghp.require package %s has unknown comparison operator %s when requiring %s %s', ghp.current.name, operator, name, version)
+end
+
 
 ---
 -- override 'project' so that when a package defines a new project we initialize it with some default values.

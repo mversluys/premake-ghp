@@ -23,3 +23,11 @@ ghp.use('mversluys/protobuf')
 ```
 
 For more information, including how to publish your own packages, see the [wiki](https://github.com/mversluys/premake-ghp/wiki).
+
+
+## Acknowledgements
+
+This extension utilizes the following Lua packages
+
+ * [lunajson](https://github.com/grafi-tt/lunajson) -- JSON parser/encoder/decoder
+ * [semver](https://github.com/kikito/semver.lua) -- Semantic Versioning
