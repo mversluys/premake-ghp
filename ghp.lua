@@ -44,6 +44,7 @@ ghp.current = nil
 ghp.api = nil
 ghp.cache = nil
 ghp.environment = nil
+ghp.environment_file = nil
 ghp.user = nil
 
 ghp.local_packages  = { 'ghp_local' }
@@ -123,16 +124,16 @@ end
 
 local function _get_environment()
 
-	if ghp.environment then
-		return ghp.environment
+	if ghp.environment_file then
+		return ghp.environment_file
 	end
 
-	local filename = nil
+	local filename = ghp.environment
 
 	-- check for command line
 	if _OPTIONS['ghp-environment'] then
 		filename = _OPTIONS['ghp-environment']
-	else
+	elseif os.getenv('GHP_ENVIRONMENT') then
 		-- check for environment variable
 		filename = os.getenv('GHP_ENVIRONMENT') 	
 	end
@@ -140,10 +141,11 @@ local function _get_environment()
 	-- if we found a filename, open the file
 	if filename then
 		verbosef('  ENVIRONMENT FILE %s', filename)
-		ghp.environment = io.open(filename, 'w')
+		ghp.environment = filename
+		ghp.environment_file = io.open(filename, 'w')
 	end
 
-	return ghp.environment
+	return ghp.environment_file
 end
 
 local function _get_api()
@@ -223,7 +225,7 @@ local function _download_release(organization, repository, release, context)
 	local source = json.decode(release_json)['zipball_url']
 	local destination = location .. '.zip'
 
-	print('  DOWNLOAD: ' .. source)
+	verbosef('  DOWNLOAD: %s', source)
 	os.mkdir(path.getdirectory(destination))
 	_http_download(source, destination, context)
 
@@ -259,26 +261,28 @@ local function _download_asset(organization, repository, release, asset, context
 	local f = asset
 	local p = path.normalize(path.join(organization, repository, release, 'assets', f))
 	local d = p
+	local check = os.isfile
 
 	-- is this a zip file?
 	if path.getextension(f) == '.zip' then
 		f = path.getbasename(f)
 		d = path.normalize(path.join(organization, repository, release, 'assets', f))
+		check = os.isdir
 	end
 
 	-- see if it the file exists locally
 	for _, folder in ipairs(_local_packages()) do
 		local location = path.join(folder, d)
-		if os.isdir(location) then
-			verbosef('  LOCAL: %s', location)
+		if check(location) then
+			verbosef('    LOCAL: %s', location)
 			return location
 		end
 	end
 
 	-- see if it's cached
 	local location = path.join(_get_cache(), d)
-	if os.isdir(location) then
-		verbosef('  CACHED: %s', location)
+	if check(location) then
+		verbosef('    CACHED: %s', location)
 		return location
 	end
 
@@ -287,9 +291,9 @@ local function _download_asset(organization, repository, release, asset, context
 	local release_info = json.decode(_http_get(api_url, context))
 
 	local asset_url = nil
-	for _, asset_info in release_info['assets'] do
+	for _, asset_info in ipairs(release_info['assets']) do
 		if asset_info['name'] == asset then
-			asset_url = asset_info['url']
+			asset_url = asset_info['browser_download_url']
 			break
 		end
 	end
@@ -299,15 +303,15 @@ local function _download_asset(organization, repository, release, asset, context
 	end
 
 	-- try to download it
-	print('  DOWNLOAD: ' .. asset_url)
-
 	local destination = path.join(_get_cache(), p)
+	verbosef('    DOWNLOAD: %s', asset_url)
+
 	os.mkdir(path.getdirectory(destination))
 	_http_download(asset_url, destination, context)
 
 	-- if it's a zip, unzip it
 	if path.getextension(asset) == '.zip' then
-		verbosef('   UNZIP: %s', destination)
+		verbosef('     UNZIP: %s %s', destination, location)
 		zip.extract(destination, location)
 		os.remove(destination)
 	end
@@ -364,7 +368,7 @@ local function _import(package, label_filter, func, func_name)
 	-- resolve the package
 	for _, i in ipairs(package[func_name]) do
 		if _label_test(i[1], label_filter) then 
-			verbosef('ghp.%s %s %s', func_name, package.name, i[3])
+			verbosef('  IMPORT: %s %s %s', func_name, package.name, i[3])
 
 			-- apply the filter that was captured at export
 			premake.configset.setFilter(premake.api.scope.current, i[2])
@@ -404,19 +408,41 @@ end
 
 function ghp.export_project(paths, label)
 	if not ghp.current then
-		premake.error('ghp.export_includedirs can only be used inside of packages')
+		premake.error('ghp.export_project can only be used inside of packages')
 	end
 	_export(ghp.current.links, 'links', paths, label, false)
 end
 
-function ghp.asset(name)
+function ghp.asset(file, name)
 	if not ghp.current then
-		premake.error('ghp.export_includedirs can only be used inside of packages')
+		premake.error('ghp.asset can only be used inside of packages')
 	end
 
+	if not name then
+		if path.getextension(file) == '.zip' then
+			name = path.getbasename(file)
+		else
+			name = file
+		end
+	end
+
+	verbosef('  ASSERT: %s %s', name, file)
+
 	local package = ghp.current
-	local context = string.format('ghp.asset %s %s %s', package.name, package.release, name)
-	return _download_asset(package.organization, package.repository, package.release, name, context)
+	local context = string.format('ghp.asset %s %s %s', package.name, package.release, file)
+	local asset_path = _download_asset(package.organization, package.repository, package.release, file, context)
+
+	-- add to the environment file
+	local env = _get_environment()
+	if env then 
+		env:write(
+			'GHP_' .. string.upper(package.organization) .. 
+			'_' .. string.upper(package.repository) ..
+			'_' .. string.upper(name) .. 
+			'="' .. path.getabsolute(asset_path) .. '"\n')
+	end
+
+	return asset_path
 end
 
 -- functions used by consumers of packages
