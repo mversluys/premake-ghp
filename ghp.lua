@@ -57,6 +57,31 @@ local function _local_packages()
 	end
 end
 
+local function _get_api()
+
+	if ghp.api then
+		return ghp.api
+	end
+
+	-- check for command line
+	if _OPTIONS['ghp-api'] then
+		ghp.api = _OPTIONS['ghp-api']
+	else
+		-- check for environment variable
+		local env = os.getenv('GHP_API')
+		if env then
+			ghp.api = env
+			return ghp.api
+		else
+			-- use default url
+			ghp.api = 'https://api.github.com'
+		end
+	end
+
+	verbosef('  API URL %s', ghp.api)
+	return ghp.api
+end
+
 local function _get_cache()
 
 	if ghp.cache then
@@ -110,12 +135,20 @@ local function _get_user()
 		user = os.getenv('GHP_USER')
 	end
 
-	if user then
-		if user:find(':') then
-			ghp.user = user
-		else
-			ghp.user = user .. ':' .. os.getpass('Enter GitHub password for user "' .. user .. '": ')
+	if not user then
+		print('Authentication to GitHub api ' .. _get_api() .. ' required')
+		local guess = os.getenv('USER')
+		io.write('Enter username [' .. guess .. ']: ')
+		user = io.read()
+		if user == '' then
+			user = guess
 		end
+	end
+
+	if user:find(':') then
+		ghp.user = user
+	else
+		ghp.user = user .. ':' .. os.getpass('Enter password for user "' .. user .. '": ')
 	end
 
 	return ghp.user
@@ -148,39 +181,23 @@ local function _get_environment()
 	return ghp.environment_file
 end
 
-local function _get_api()
+local function _http_progress(total, current)
+	local width = 78
+	local progress = math.floor(current * width / total)
 
-	if ghp.api then
-		return ghp.api
-	end
-
-	-- check for command line
-	if _OPTIONS['ghp-api'] then
-		ghp.api = _OPTIONS['ghp-api']
+	if progress == width then
+		io.write(string.rep(' ', width + 2) .. '\r')
 	else
-		-- check for environment variable
-		local env = os.getenv('GHP_API')
-		if env then
-			ghp.api = env
-			return ghp.api
-		else
-			-- use default url
-			ghp.api = 'https://api.github.com'
-		end
+		io.write('[' .. string.rep('=', progress) .. string.rep(' ', width - progress) .. ']\r')
 	end
-
-	verbosef('  API URL %s', ghp.api)
-	return ghp.api
 end
 
 local function _http_get(url, context)
+	local result, result_str, result_code = http.get(url, { progress = _http_progress })
 
-	local result, result_str, result_code = http.get(url, { userpwd = _get_user() })
-
-	-- TODO: update premake to return the result code from http.get0
-	result_code = -1
-
-	-- TODO: handle lazy authentication so that users don't need to specify on the command line
+	if result_code == 401 then
+		result, result_str, result_code = http.get(url, { userpwd = _get_user(), progress = _http_progress })
+	end
 
 	if not result then
 		premake.error('%s retrieval of %s failed (%d)\n%s', context, url, result_code, result_str)
@@ -190,12 +207,14 @@ local function _http_get(url, context)
 end
 
 local function _http_download(url, destination, context)
-	local result_str, result_code = http.download(url, destination, { userpwd = _get_user() })
+	local result_str, result_code = http.download(url, destination, { progress = _http_progress })
 
-	-- TODO: handle lazy authentication so that users don't need to specify on the command line
+	if result_code == 401 then
+		result_str, result_code = http.download(url, destination, { userpwd = _get_user(), progress = _http_progress })
+	end
 
-	if result_code ~= 0 then
-		premake.error('%s retrieval of %s failed (%d)\n%s', label, result_code, result_str)
+	if result_str ~= "OK" then
+		premake.error('%s retrieval of %s failed (%d)\n%s', context, url, result_code, result_str)
 	end
 end
 
@@ -221,11 +240,12 @@ local function _download_release(organization, repository, release, context)
 
 	-- try to download it 
 	local api_url = _get_api() .. '/repos/' .. organization .. '/' .. repository .. '/releases/tags/' .. release
+	printf('  INFO: %s', api_url)
 	local release_json = _http_get(api_url, context)
 	local source = json.decode(release_json)['zipball_url']
 	local destination = location .. '.zip'
 
-	verbosef('  DOWNLOAD: %s', source)
+	printf('  DOWNLOAD: %s', source)
 	os.mkdir(path.getdirectory(destination))
 	_http_download(source, destination, context)
 
@@ -288,6 +308,7 @@ local function _download_asset(organization, repository, release, asset, context
 
 	-- try to download it
 	local api_url = _get_api() .. '/repos/' .. organization .. '/' .. repository .. '/releases/tags/' .. release
+	printf('    INFO: %s', api_url)
 	local release_info = json.decode(_http_get(api_url, context))
 
 	local asset_url = nil
@@ -304,7 +325,7 @@ local function _download_asset(organization, repository, release, asset, context
 
 	-- try to download it
 	local destination = path.join(_get_cache(), p)
-	verbosef('    DOWNLOAD: %s', asset_url)
+	printf('    DOWNLOAD: %s', asset_url)
 
 	os.mkdir(path.getdirectory(destination))
 	_http_download(asset_url, destination, context)
@@ -514,7 +535,10 @@ function ghp.import(name, release)
 	-- add to the environment file
 	local env = _get_environment()
 	if env then 
-		env:write('GHP_' .. string.upper(organization) .. '_' .. string.upper(repository) .. '=' .. path.getabsolute(directory) .. '\n')
+		env:write(
+			'GHP_' .. string.upper(organization) .. 
+			'_' .. string.upper(repository) .. 
+			'="' .. path.getabsolute(directory) .. '"\n')
 	end
 
 	ghp.current = package
@@ -538,15 +562,14 @@ function ghp.require(name, version)
 		premake.error('ghp.require can only be used inside of packages')
 	end
 
-	local package = ghp.packages[name]
+	local operator, version = version:match('(.)(.+)')
+	verbosef('  REQUIRE: %s %s%s', name, operator, version)
 
+	-- do we have this package?
+	local package = ghp.packages[name]
 	if not package then
 		premake.error('ghp.require package %s requires %s %s %s package not found', ghp.current.name, name, operator, version)
 	end
-
-	local operator, version = version:match('(.)(.+)')
-
-	verbosef('  REQUIRE: %s %s%s', name, operator, version)
 
 	local current_version = semver(package.version)
 	local compare_version = semver(version)
