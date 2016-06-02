@@ -496,6 +496,35 @@ function ghp.use(package_name, label_filter)
 	end
 end
 
+-- load a premake module given a name and release
+function ghp.module(name, release, versions)
+
+	-- the name should contain the organization and repository
+	local organization, repository = name:match('(%S+)/(%S+)')
+
+	-- the last part of the name is the module name
+	local module_name = name:match('premake%-(%S+)$')
+	if not module_name then
+		premake.error('ghp.module expected name %s to end in premake-{name}', name)
+	end
+
+	local context = string.format('ghp.module %s %s', name, release)
+	printf('%s (%s)', context, module_name)
+
+	-- download the module
+	local directory = _download_release(organization, repository, release, context)
+
+	-- push the current path
+	local path = premake.path
+
+	-- set the path to the inside of the cache and load the module
+	premake.path = directory
+	require(module_name, versions)
+
+	-- pop the previous path
+	premake.path = path
+end
+
 -- import a package given a name and release
 function ghp.import(name, release)
 
