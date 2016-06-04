@@ -497,7 +497,7 @@ function ghp.use(package_name, label_filter)
 end
 
 -- load a premake module given a name and release
-function ghp.module(name, release, versions)
+function ghp.require(name, release, versions)
 
 	-- the name should contain the organization and repository
 	local organization, repository = name:match('(%S+)/(%S+)')
@@ -505,10 +505,10 @@ function ghp.module(name, release, versions)
 	-- the last part of the name is the module name
 	local module_name = name:match('premake%-(%S+)$')
 	if not module_name then
-		premake.error('ghp.module expected name %s to end in premake-{name}', name)
+		premake.error('ghp.require expected name %s to end in premake-{name}', name)
 	end
 
-	local context = string.format('ghp.module %s %s', name, release)
+	local context = string.format('ghp.require %s %s', name, release)
 	printf('%s (%s)', context, module_name)
 
 	-- download the module
@@ -585,19 +585,19 @@ function ghp.import(name, release)
 
 end
 
--- require a package to have been imported
-function ghp.require(name, version)
+-- declare a dependency on another package having been imported
+function ghp.dependency(name, version)
 	if not ghp.current then
-		premake.error('ghp.require can only be used inside of packages')
+		premake.error('ghp.dependency can only be used inside of packages')
 	end
 
 	local operator, version = version:match('(.)(.+)')
-	verbosef('  REQUIRE: %s %s%s', name, operator, version)
+	verbosef('  DEPENDENCY: %s %s%s', name, operator, version)
 
 	-- do we have this package?
 	local package = ghp.packages[name]
 	if not package then
-		premake.error('ghp.require package %s requires %s %s %s package not found', ghp.current.name, name, operator, version)
+		premake.error('ghp.dependency package %s depends on %s %s %s package not found', ghp.current.name, name, operator, version)
 	end
 
 	local current_version = semver(package.version)
@@ -608,7 +608,7 @@ function ghp.require(name, version)
 		if compare_version == current_version then
 			return 
 		else
-			premake.error('ghp.require package %s requires %s =%s found version %s', ghp.current.name, name, version, package.version)
+			premake.error('ghp.dependency package %s depends on %s =%s found version %s', ghp.current.name, name, version, package.version)
 		end
 	end
 
@@ -617,7 +617,7 @@ function ghp.require(name, version)
 		if compare_version < current_version then
 			return
 		else
-			premake.error('ghp.require package %s requires %s >%s found version %s', ghp.current.name, name, version, package.version)
+			premake.error('ghp.dependency package %s depends on %s >%s found version %s', ghp.current.name, name, version, package.version)
 		end			
 	end
 
@@ -626,11 +626,11 @@ function ghp.require(name, version)
 		if compare_version ^ current_version then
 			return
 		else
-			premake.error('ghp.require package %s requires %s ^%s found version %s', ghp.current.name, name, version, package.version)
+			premake.error('ghp.dependency package %s depends on %s ^%s found version %s', ghp.current.name, name, version, package.version)
 		end			
 	end
 
-	premake.error('ghp.require package %s has unknown comparison operator %s when requiring %s %s', ghp.current.name, operator, name, version)
+	premake.error('ghp.dependency package %s has unknown comparison operator %s when depending on %s %s', ghp.current.name, operator, name, version)
 end
 
 
