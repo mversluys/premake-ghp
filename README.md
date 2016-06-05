@@ -26,6 +26,8 @@ For more information, including how to publish your own packages, see the [wiki]
 
 For a working sample project, see [premake-ghp-sample](https://github.com/mversluys/premake-ghp-sample).
 
+A public index of available packages can be found here http://www.premake-ghp.com.
+
 ## Acknowledgements
 
 This extension utilizes the following Lua packages
