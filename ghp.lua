@@ -32,6 +32,12 @@ newoption {
 }
 
 newoption {
+	trigger = "ghp-index",
+	value = "URL",	
+	description = "The url of the premake-ghp index. Change to use an internal index."
+}
+
+newoption {
 	trigger = "ghp-user",
 	value = "USERNAME[:PASSWORD]",
 	description = "The user name and optional password used to retrieve packages from GitHub"
@@ -45,7 +51,10 @@ ghp.api = nil
 ghp.cache = nil
 ghp.environment = nil
 ghp.environment_file = nil
+ghp.index = nil
 ghp.user = nil
+ghp.consumer_organization = nil
+ghp.consumer_repository = nil
 
 ghp.local_packages  = { 'ghp_local' }
 
@@ -181,6 +190,31 @@ local function _get_environment()
 	return ghp.environment_file
 end
 
+local function _get_index()
+
+	if ghp.index then
+		return ghp.index
+	end
+
+	-- check for command line
+	if _OPTIONS['ghp-index'] then
+		ghp.index = _OPTIONS['ghp-index']
+	else
+		-- check for environment variable
+		local env = os.getenv('GHP_INDEX')
+		if env then
+			ghp.index = env
+			return ghp.index
+		else
+			-- use default url
+			ghp.index = 'http://www.premake-ghp.com'
+		end
+	end
+
+	verbosef('  INDEX URL %s', ghp.index)
+	return ghp.index
+end
+
 local function _http_progress(total, current)
 	local width = 78
 	local progress = math.floor(current * width / total)
@@ -218,6 +252,23 @@ local function _http_download(url, destination, context)
 	end
 end
 
+local function _index_use(organization, repository, release, cached)
+	if cached then
+		cached = '&cached=1'
+	else
+		cached = ''
+	end
+
+	if ghp.consumer_organization and ghp.consumer_repository then
+		local url = _get_index() .. '/api/use/' .. 
+			organization .. '/' .. repository .. '/' .. release .. 
+			'?consumer=' .. ghp.consumer_organization .. '/' .. ghp.consumer_repository .. 
+			cached
+		verbosef('  INDEX USE: %s', url)
+		http.get(url, { timeout = 5 })
+	end
+end
+
 local function _download_release(organization, repository, release, context)
 
 	local p = path.normalize(path.join(organization, repository, release, 'release'))
@@ -235,6 +286,7 @@ local function _download_release(organization, repository, release, context)
 	local location = path.join(_get_cache(), p)
 	if os.isdir(location) then
 		verbosef('  CACHED: %s', location)
+		_index_use(organization, repository, release, true)
 		return location
 	end
 
@@ -272,6 +324,8 @@ local function _download_release(organization, repository, release, context)
 
 	-- remove the downloaded file
 	os.remove(destination)
+
+	_index_use(organization, repository, release, false)
 
 	return location
 end
@@ -496,11 +550,33 @@ function ghp.use(package_name, label_filter)
 	end
 end
 
+-- specify who is using packages
+function ghp.consumer(name)
+
+	if ghp.current then
+		premake.error('ghp.consumer can not be used inside of packages, currently in package %s', ghp.current.name)
+	end
+
+	-- the name should contain the organization and repository
+	local organization, repository = name:match('(%S+)/(%S+)')
+
+	if not organization or not repository then
+		premake.error('ghp.consumer expected name to contain organization/repository but found %s', name)
+	end
+
+	ghp.consumer_organization = organization
+	ghp.consumer_repository = repository
+end
+
 -- load a premake module given a name and release
 function ghp.require(name, release, versions)
 
 	-- the name should contain the organization and repository
 	local organization, repository = name:match('(%S+)/(%S+)')
+
+	if not organization or not repository then
+		premake.error('ghp.require expected name to contain organization/repository but found %s', name)
+	end
 
 	-- the last part of the name is the module name
 	local module_name = name:match('premake%-(%S+)$')
@@ -539,6 +615,10 @@ function ghp.import(name, release)
 
 	-- the name should contain the organization and repository
 	local organization, repository = name:match('(%S+)/(%S+)')
+
+	if not organization or not repository then
+		premake.error('ghp.import expected name to contain organization/repository but found %s', name)
+	end
 
 	-- version is the numerical and dotted part of the release
 	local version = release:match('(%d[%d\\\.]+%d)')
