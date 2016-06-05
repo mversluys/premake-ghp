@@ -24,6 +24,7 @@ ghp.use('mversluys/protobuf')
 
 For more information, including how to publish your own packages, see the [wiki](https://github.com/mversluys/premake-ghp/wiki).
 
+For a working sample project, see [premake-ghp-sample](https://github.com/mversluys/premake-ghp-sample).
 
 ## Acknowledgements
 
