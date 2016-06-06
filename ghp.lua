@@ -16,7 +16,7 @@ ghp._VERSION = "0.2.0"
 newoption {
 	trigger = "ghp-api",
 	value = "URL",	
-	description = "The url of the GitHib api to use. Change to retrieve from GitHib enterprise"
+	description = "The URL of the GitHub API to use. Change to retrieve from GitHub enterprise"
 }
 
 newoption {
