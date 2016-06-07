@@ -11,18 +11,18 @@ semver = require 'semver'
 
 premake.modules.ghp = {}
 ghp = premake.modules.ghp
-ghp._VERSION = "0.2.0"
+ghp._VERSION = "0.8.0"
 
 newoption {
 	trigger = "ghp-api",
 	value = "URL",	
-	description = "The URL of the GitHub API to use. Change to retrieve from GitHub enterprise"
+	description = "The URL of the GitHub API to use. Change to retrieve from GitHub enterprise."
 }
 
 newoption {
 	trigger = "ghp-cache",
 	value = "DIRECTORY",
-	description = "Directory to use for the package cache"
+	description = "Directory to use for the package cache."
 }
 
 newoption {
@@ -501,7 +501,7 @@ function ghp.asset(file, name)
 		end
 	end
 
-	verbosef('  ASSERT: %s %s', name, file)
+	verbosef('  ASSET: %s %s', name, file)
 
 	local package = ghp.current
 	local context = string.format('ghp.asset %s %s %s', package.name, package.release, file)
