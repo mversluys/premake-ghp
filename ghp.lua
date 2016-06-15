@@ -147,7 +147,17 @@ local function _get_user()
 	if not user then
 		print('Authentication to GitHub api ' .. _get_api() .. ' required')
 		local guess = os.getenv('USER')
-		io.write('Enter username [' .. guess .. ']: ')
+
+		if not guess then
+			guess = os.getenv('USERNAME')
+		end
+
+		if guess then
+			io.write('Enter username [' .. guess .. ']: ')
+		else
+			io.write('Enter username: ')
+		end
+
 		user = io.read()
 		if user == '' then
 			user = guess
