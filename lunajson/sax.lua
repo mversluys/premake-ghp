@@ -7,9 +7,9 @@ local tostring, type, unpack = tostring, type, table.unpack or unpack
 -- use bitwise operation to speedup unicode codepoints processing on Lua 5.3.
 local genstrlib
 if _VERSION == "Lua 5.3" then
-	genstrlib = require '_str_lib_lua53'
+	genstrlib = include '_str_lib_lua53.lua'
 else
-	genstrlib = require '_str_lib'
+	genstrlib = include '_str_lib.lua'
 end
 
 local _ENV = nil
