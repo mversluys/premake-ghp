@@ -251,10 +251,10 @@ local function _http_get(url, context)
 end
 
 local function _http_download(url, destination, context)
-	local result_str, result_code = http.download(url, destination, { progress = _http_progress })
+	local result_str, result_code = http.download(url, destination, { progress = _http_progress, headers = { 'Accept: application/octet-stream' } })
 
 	if result_code == 401 then
-		result_str, result_code = http.download(url, destination, { userpwd = _get_user(), progress = _http_progress })
+		result_str, result_code = http.download(url, destination, { userpwd = _get_user(), progress = _http_progress, headers = { 'Accept: application/octet-stream' } })
 	end
 
 	if result_str ~= "OK" then
@@ -373,19 +373,23 @@ local function _download_asset(organization, repository, release, asset, context
 	-- try to download it
 	local api_url = _get_api() .. '/repos/' .. organization .. '/' .. repository .. '/releases/tags/' .. release
 	printf('    INFO: %s', api_url)
-	local release_info = json.decode(_http_get(api_url, context))
 
-	local asset_url = nil
+	local release_json = _http_get(api_url, context)
+	local release_info = json.decode(release_json)
+
+	local asset_id = nil
 	for _, asset_info in ipairs(release_info['assets']) do
 		if asset_info['name'] == asset then
-			asset_url = asset_info['browser_download_url']
+			asset_id = asset_info['id']
 			break
 		end
 	end
 
-	if not asset_url then
+	if not asset_id then
 		premake.error('%s unable to find asset named %s', context, asset)
 	end
+
+	local asset_url = _get_api() .. '/repos/' .. organization .. '/' .. repository .. '/releases/assets/' .. asset_id
 
 	-- try to download it
 	local destination = path.join(_get_cache(), p)
